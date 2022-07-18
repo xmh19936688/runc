@@ -7,10 +7,14 @@ with namespaces, cgroups, capabilities, and filesystem access controls.
 It allows you to manage the lifecycle of the container performing additional operations
 after the container is created.
 
+> Libcontainer为创建容器提供了go语言的实现，可以在容器被创建后管理其生命周期。
 
 #### Container
+
 A container is a self contained execution environment that shares the kernel of the
 host system and which is (optionally) isolated from other containers in the system.
+
+> 容器是自包含的运行环境，与宿主机共享内核，与其他容器相互独立。
 
 #### Using libcontainer
 
@@ -20,8 +24,14 @@ the current binary (/proc/self/exe) to be executed as the init process, and use
 arg "init", we call the first step process "bootstrap", so you always need a "init"
 function as the entry of "bootstrap".
 
+> 因为容器是分两个步骤生成的，因此需要一个二进制文件，作为容器的init进程来执行。
+> 在libcontainer中，我们使用当前的二进制文件（/proc/self/exe）来执行init进程（使用参数 "init"），
+> 我们将第一步称为"bootstrap"，所以需要一个"init"函数作为"bootstrap"的入口。
+
 In addition to the go init function the early stage bootstrap is handled by importing
 [nsenter](https://github.com/opencontainers/runc/blob/master/libcontainer/nsenter/README.md).
+
+> 除了go的init函数之外，早期阶段的bootstrap是通过导入nsenter来处理的。
 
 ```go
 import (
@@ -42,6 +52,8 @@ func init() {
 
 Then to create a container you first have to create a configuration
 struct describing how the container is to be created. A sample would look similar to this:
+
+> 要创建一个容器，首先创建一个配置来描述如何创建容器。例如：
 
 ```go
 defaultMountFlags := unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_NODEV
@@ -218,6 +230,8 @@ config := &configs.Config{
 Once you have the configuration populated you can create a container
 with a specified ID under a specified state directory:
 
+> 有了配置之后就可以在指定的目录下创建指定ID的容器：
+
 ```go
 container, err := libcontainer.Create("/run/containers", "container-id", config)
 if err != nil {
@@ -228,6 +242,8 @@ if err != nil {
 
 To spawn bash as the initial process inside the container and have the
 processes pid returned in order to wait, signal, or kill the process:
+
+> 指定bash为容器内的初始进程，并返回进程的pid，pid用于执行wait、signal或kill：
 
 ```go
 process := &libcontainer.Process{
@@ -258,6 +274,8 @@ container.Destroy()
 ```
 
 Additional ways to interact with a running container are:
+
+> 与容器交互的其他方式：
 
 ```go
 // return all the pids for all processes running inside the container.
@@ -293,10 +311,14 @@ libcontainer now integrates [CRIU](http://criu.org/) for checkpointing and resto
 This lets you save the state of a process running inside a container to disk, and then restore
 that state into a new process, on the same machine or on another machine.
 
+> libcontainer集成了用于检查和恢复容器的`CRIU`。可以把在容器内运行的进程的状态保存到磁盘上，再将该状态恢复到同一台机器或另一台机器上的新进程中。
+
 `criu` version 1.5.2 or higher is required to use checkpoint and restore.
 If you don't already  have `criu` installed, you can build it from source, following the
 [online instructions](http://criu.org/Installation). `criu` is also installed in the docker image
 generated when building libcontainer with docker.
+
+> 使用checkpoint和restore要求`criu`1.5.2+，可以按照网上的说明从源码构建安装。`criu`也安装在用docker构建libcontainer时生成的docker镜像中
 
 
 ## Copyright and license
