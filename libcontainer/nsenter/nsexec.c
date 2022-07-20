@@ -186,8 +186,10 @@ static void write_log(int level, const char *format, ...)
 
 	/* This logging is on a best-effort basis. In case of a short or failed
 	 * write there is nothing we can do, so just ignore write() errors.
+	 * 即使`write()`失败了也没什么能做的，所以忽略结果
 	 */
 	ssize_t __attribute__((unused)) __res = write(logfd, json, ret);
+	/*定义变量而没有使用会有警告，`__attribute__((unused))`可以告诉编译器不用警告*/
 
 out:
 	free(message);
@@ -398,9 +400,11 @@ static int clone_parent(jmp_buf *env, int jmpval)
 /*
  * Returns an environment variable value as a non-negative integer, or -ENOENT
  * if the variable was not found or has an empty value.
+ * 返回指定环境变量的非负整数值，如果变量不存在或未空值则返回`-ENOENT`。
  *
  * If the value can not be converted to an integer, or the result is out of
  * range, the function bails out.
+ * 如果环境变量的值不能被转为整数，或者其值超出范围，则触发`bail`。
  */
 static int getenv_int(const char *name)
 {
@@ -427,6 +431,7 @@ static int getenv_int(const char *name)
 /*
  * Sets up logging by getting log fd and log level from the environment,
  * if available.
+ * 从两个环境变量中获取log级别，以及log文件描述符
  */
 static void setup_logpipe(void)
 {
@@ -435,6 +440,7 @@ static void setup_logpipe(void)
 	i = getenv_int("_LIBCONTAINER_LOGPIPE");
 	if (i < 0) {
 		/* We are not runc init, or log pipe was not provided. */
+		/* 如果没有这个环境变量，说明不是在执行`runc init`，或者没有提供用于log的pipe*/
 		return;
 	}
 	logfd = i;
@@ -840,6 +846,8 @@ void nsexec(void)
 	/*
 	 * Setup a pipe to send logs to the parent. This should happen
 	 * first, because bail will use that pipe.
+	 * 建立向parent发送log的pipe。
+	 * 由于bail需要用这个pipe，所以需要先首先运行
 	 */
 	setup_logpipe();
 
@@ -847,10 +855,13 @@ void nsexec(void)
 	 * Get the init pipe fd from the environment. The init pipe is used to
 	 * read the bootstrap data and tell the parent what the new pids are
 	 * after the setup is done.
+	 * 从环境变量获取用于读取bootstrap数据pipe，
+	 * 后面也会把setup完成后的pid号从这个pipe发给parent
 	 */
 	pipenum = getenv_int("_LIBCONTAINER_INITPIPE");
 	if (pipenum < 0) {
 		/* We are not a runc init. Just return to go runtime. */
+		/* 如果没获取到这个环境变量，说明不是在执行`runc init`，直接返回到go运行时*/
 		return;
 	}
 
@@ -858,6 +869,7 @@ void nsexec(void)
 	 * We need to re-exec if we are not in a cloned binary. This is necessary
 	 * to ensure that containers won't be able to access the host binary
 	 * through /proc/self/exe. See CVE-2019-5736.
+	 * 确保执行的runc是克隆二进制文件。避免容器可以通过`/proc/self/exe`直接执行宿主机上的文件
 	 */
 	if (ensure_cloned_binary() < 0)
 		bail("could not ensure we are a cloned binary");
@@ -865,6 +877,7 @@ void nsexec(void)
 	/*
 	 * Inform the parent we're past initial setup.
 	 * For the other side of this, see initWaiter.
+	 * 通过pipe通知parent已完成initial步骤，pipe的另一端可以看`initWaiter`
 	 */
 	if (write(pipenum, "", 1) != 1)
 		bail("could not inform the parent we are past initial setup");
@@ -872,6 +885,7 @@ void nsexec(void)
 	write_log(DEBUG, "=> nsexec container setup");
 
 	/* Parse all of the netlink configuration. */
+	/* 从pipe中读取netlink配置信息并写入`config`结构体*/
 	nl_parse(pipenum, &config);
 
 	/* Set oom_score_adj. This has to be done before !dumpable because
@@ -879,6 +893,8 @@ void nsexec(void)
 	 * user (if !dumpable is set). All children inherit their parent's
 	 * oom_score_adj value on fork(2) so this will always be propagated
 	 * properly.
+	 * 这一步需要在`!dumpable`之前完成，否则`/proc/self/oom_score_adj`会只读。
+	 * 除非是以`privileged`模式运行。children会继承`oom_score_adj`。
 	 */
 	update_oom_score_adj(config.oom_score_adj, config.oom_score_adj_len);
 
