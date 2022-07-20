@@ -134,6 +134,9 @@ static void *must_realloc(void *ptr, size_t size)
  * Verify whether we are currently in a self-cloned program (namely, is
  * /proc/self/exe a memfd). F_GET_SEALS will only succeed for memfds (or rather
  * for shmem files), and we want to be sure it's actually sealed.
+ *
+ * 验证当前是否在一个self-cloned的程序中（即，是否是`/proc/self/exe`这个memfd）。
+ * F_GET_SEALS只对memfds（或者说是shmem文件）有效，因此需要确定它是sealed的。
  */
 static int is_self_cloned(void)
 {
@@ -146,12 +149,44 @@ static int is_self_cloned(void)
 		fprintf(stderr, "you have no read access to runc binary file\n");
 		return -ENOTRECOVERABLE;
 	}
+	/*
+	* By default, the new file descriptor is set to remain open across
+    * an execve(2) (i.e., the FD_CLOEXEC file descriptor flag described
+    * in fcntl(2) is initially disabled); the O_CLOEXEC flag, described
+    * below, can be used to change this default.  The file offset is
+    * set to the beginning of the file (see lseek(2)).
+	*
+	* Enable the close-on-exec flag for the new file descriptor.
+	* Specifying this flag permits a program to avoid additional
+	* fcntl(2) F_SETFD operations to set the FD_CLOEXEC flag.
+	*
+	* Note that the use of this flag is essential in some
+	* multithreaded programs, because using a separate fcntl(2)
+	* F_SETFD operation to set the FD_CLOEXEC flag does not
+	* suffice to avoid race conditions where one thread opens a
+	* file descriptor and attempts to set its close-on-exec flag
+	* using fcntl(2) at the same time as another thread does a
+	* fork(2) plus execve(2).  Depending on the order of
+	* execution, the race may lead to the file descriptor
+	* returned by open() being unintentionally leaked to the
+	* program executed by the child process created by fork(2).
+	* (This kind of race is in principle possible for any system
+	* call that creates a file descriptor whose close-on-exec
+	* flag should be set, and various other Linux system calls
+	* provide an equivalent of the O_CLOEXEC flag to deal with
+	* this problem.)
+	* 来自[open的O_CLOEXEC参数](https://man7.org/linux/man-pages/man2/open.2.html)
+	*/
 
 	/*
 	 * Is the binary a fully-sealed memfd? We don't need CLONED_BINARY_ENV for
 	 * this, because you cannot write to a sealed memfd no matter what (so
 	 * sharing it isn't a bad thing -- and an admin could bind-mount a sealed
 	 * memfd to /usr/bin/runc to allow re-use).
+	 *
+	 * 检查二进制文件是否为完全密闭包memfd，不是的话就不需要CLONED_BINARY_ENV。
+     * 因为闭包的memfd无法写入（所以分享它并不是一件坏事，
+	 * 而且可以把一个闭包的的memfd绑定挂载到`/usr/bin/runc`以允许重复使用）。
 	 */
 	is_cloned = (fcntl(fd, F_GET_SEALS) == RUNC_MEMFD_SEALS);
 	if (is_cloned)
@@ -161,6 +196,9 @@ static int is_self_cloned(void)
 	 * All other forms require CLONED_BINARY_ENV, since they are potentially
 	 * writeable (or we can't tell if they're fully safe) and thus we must
 	 * check the environment as an extra layer of defence.
+	 *
+	 * 所有其他形式都需要CLONED_BINARY_ENV，因为它们有可能是可写的
+	 *（否则无法判断它们是否完全安全），因此必须检查环境。
 	 */
 	if (!getenv(CLONED_BINARY_ENV)) {
 		is_cloned = false;
@@ -535,6 +573,14 @@ error:
 /* Get cheap access to the environment. */
 extern char **environ;
 
+/*
+* `ensure_cloned_binary()`方法中调用了`is_self_cloned()`方法，
+* 在`is_self_cloned()`中打开`/proc/self/exe`文件，通过对文件描述符执行`F_GET_SEALS`操作,
+* 根据是否成功判断是否为克隆文件描述符（F_GET_SEALS操作只能在memfds上执行成功）。
+* 在调用`is_self_cloned()`后，如果返回值大于0，都会直接返回。否则则执行clone_binary()创建克隆文件。
+* 参考引用[runc容器逃逸漏洞分析](https://x3fwy.bitcron.com/post/runc-malicious-container-escape)
+* [CVE-2019-5736 runC漏洞逃逸](https://saucer-man.com/information_security/547.html)
+*/
 int ensure_cloned_binary(void)
 {
 	int execfd;
