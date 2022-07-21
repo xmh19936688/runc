@@ -12,6 +12,8 @@ C代码一上来就会找`_LIBCONTAINER_INITPIPE`这个环境变量
 比如只在命令行执行`runc --help`是完全没必要走一遍`nsexec()`的。
 所以只有在需要的情况下（可能只有`runc init`），才会在go代码执行前走一遍特定的初始化流程。
 
+todo [runc源码分析](https://toutiao.io/posts/9t5ta44/preview)
+
 ## nsexec.c
 
 ### 主体逻辑
